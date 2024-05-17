@@ -308,7 +308,7 @@ public:
                     std::move_backward(begin() + shift, end() - 1, end());
                     constructed_elements = end() - (begin() + shift);
                 } catch (...) {
-                    std::destroy_at(data_ + size_);
+                    std::destroy_at(data_ + shift);
                     if (constructed_elements > 0) {
                         std::destroy(begin() + shift, end() - 1);
                     }
