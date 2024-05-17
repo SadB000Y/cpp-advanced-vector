@@ -199,10 +199,9 @@ public:
         EmplaceBack(value);
     }
     
-    template <typename Type> 
-    void PushBack(Type&& value) { 
-        EmplaceBack(std::forward<Type>(value)); 
-    } 
+    void PushBack(T&& value) {
+        EmplaceBack(std::move(value));
+    }
 
     void PopBack() /* noexcept */ {
         assert(size_ > 0);
@@ -213,6 +212,7 @@ public:
     template <typename... Args>
     T& EmplaceBack(Args&&... args) {
         T* result = nullptr;
+        size_t shift = end() - begin();
         if (size_ == Capacity()) {
             RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
             result = new (new_data + size_) T(std::forward<Args>(args)...);
@@ -223,7 +223,7 @@ public:
                     std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
                 }
             } catch (...) {
-                std::destroy_n(new_data.GetAddress(), size_);
+                std::destroy_n(new_data.GetAddress(), shift);
                 throw;
             }
             std::destroy_n(data_.GetAddress(), size_);
@@ -278,7 +278,7 @@ public:
                     std::uninitialized_copy_n(data_.GetAddress(), shift, new_data.GetAddress());
                 }
             } catch (...) {
-                new_data[shift].~T();
+                std::destroy_at(new_data + shift);
                 throw;
             }
             
@@ -289,7 +289,7 @@ public:
                     std::uninitialized_copy_n(begin() + shift, size_ - shift, new_data.GetAddress() + shift + 1);
                 }
             } catch (...) {
-                std::destroy_n(new_data.GetAddress(), size_ + 1);
+                std::destroy_n(new_data.GetAddress(), shift + 1);
                 throw;
             }
             
@@ -302,7 +302,19 @@ public:
             else {
                 T copy(std::forward<Args>(args)...);
                 new (data_ + size_) T(std::move(data_[size_ - 1]));
-                std::move_backward(begin() + shift, end() - 1, end());
+                
+                size_t constructed_elements = 0;
+                try {
+                    std::move_backward(begin() + shift, end() - 1, end());
+                    constructed_elements = end() - (begin() + shift);
+                } catch (...) {
+                    std::destroy_at(data_ + size_);
+                    if (constructed_elements > 0) {
+                        std::destroy(begin() + shift, end() - 1);
+                    }
+                    throw;
+                }
+                //std::move_backward(begin() + shift, end() - 1, end());
                 data_[shift] = std::move(copy);
             }
         }
