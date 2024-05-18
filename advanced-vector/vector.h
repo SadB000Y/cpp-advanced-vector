@@ -212,18 +212,19 @@ public:
     template <typename... Args>
     T& EmplaceBack(Args&&... args) {
         T* result = nullptr;
-        size_t shift = end() - begin();
+        //size_t shift = end() - begin();
         if (size_ == Capacity()) {
             RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
             result = new (new_data + size_) T(std::forward<Args>(args)...);
+            iterator last = nullptr;
             try {
                 if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
                     std::uninitialized_move_n(data_.GetAddress(), size_, new_data.GetAddress());
                 } else {
-                    std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
+                    last =std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
                 }
             } catch (...) {
-                std::destroy_n(new_data.GetAddress(), shift);
+                std::destroy_n(new_data.GetAddress(), last - new_data.GetAddress());
                 throw;
             }
             std::destroy_n(data_.GetAddress(), size_);
@@ -234,6 +235,7 @@ public:
         ++size_;
         return *result;
     }
+
 
     using iterator = T*;
     using const_iterator = const T*;
@@ -262,7 +264,7 @@ public:
         return end();
     }
 
-    template <typename... Args>
+    /* template <typename... Args>
     iterator Emplace(const_iterator pos, Args&&... args){
         assert(pos >= begin() && pos <= end());
         size_t shift = pos - begin();
@@ -321,8 +323,74 @@ public:
 
         ++size_;
         return begin() + shift;
-    } 
+    } */
     
+    template <typename... Args> 
+    iterator Emplace(const_iterator pos, Args&&... args){ 
+        assert(pos >= begin() && pos <= end()); 
+        size_t shift = pos - begin(); 
+
+        if (size_ == Capacity()) { 
+            RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2); 
+            new (new_data + shift) T(std::forward<Args>(args)...); 
+
+            try { 
+                if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) { 
+                    std::uninitialized_move_n(data_.GetAddress(), shift, new_data.GetAddress()); 
+                } else { 
+                    std::uninitialized_copy_n(data_.GetAddress(), shift, new_data.GetAddress()); 
+                } 
+            } catch (...) { 
+                std::destroy_at(new_data + shift); 
+                throw; 
+            } 
+
+            try { 
+                if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) { 
+                    std::uninitialized_move_n(begin() + shift, size_ - shift, new_data.GetAddress() + shift + 1); 
+                } else { 
+                    std::uninitialized_copy_n(begin() + shift, size_ - shift, new_data.GetAddress() + shift + 1); 
+                } 
+            } catch (...) { 
+                std::destroy_n(new_data.GetAddress(), shift + 1); 
+                throw; 
+            } 
+
+            std::destroy_n(begin(), size_); 
+            data_.Swap(new_data); 
+        } else { 
+            if (size_ == shift) { 
+                new (data_ + size_) T(std::move(*(end() - 1))); 
+            } else { 
+                T copy(std::forward<Args>(args)...); 
+                new (data_ + size_) T(std::move(data_[size_ - 1])); 
+
+                try { 
+                    std::move_backward(begin() + shift, end() - 1, end()); 
+                } catch (...) { 
+                    std::destroy_at(data_ + size_); 
+                    throw; 
+                } 
+
+                try { 
+                    data_[shift] = std::move(copy); 
+                } catch (...) { 
+                    try {
+                        std::move(begin() + shift + 1, end(), begin() + shift);
+                    } catch (...) {
+                        std::terminate();
+                    }
+                    std::destroy_at(data_ + size_);
+                    throw; 
+                } 
+            } 
+        } 
+
+        ++size_; 
+        return begin() + shift; 
+    }
+
+
     iterator Erase(const_iterator pos) /*noexcept(std::is_nothrow_move_assignable_v<T>)*/{
         assert(pos >= begin() && pos < end());
         size_t shift = pos - begin();
