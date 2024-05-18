@@ -224,7 +224,7 @@ public:
                     last =std::uninitialized_copy_n(data_.GetAddress(), size_, new_data.GetAddress());
                 }
             } catch (...) {
-                std::destroy_n(new_data.GetAddress(), last - new_data.GetAddress());
+                std::destroy_at(result);
                 throw;
             }
             std::destroy_n(data_.GetAddress(), size_);
@@ -264,8 +264,8 @@ public:
         return end();
     }
 
-    /* template <typename... Args>
-    iterator Emplace(const_iterator pos, Args&&... args){
+    /*template <typename... Args>
+        iterator Emplace(const_iterator pos, Args&&... args){
         assert(pos >= begin() && pos <= end());
         size_t shift = pos - begin();
 
@@ -280,10 +280,11 @@ public:
                     std::uninitialized_copy_n(data_.GetAddress(), shift, new_data.GetAddress());
                 }
             } catch (...) {
-                std::destroy_at(new_data + shift);
+                //new_data[shift].~T();
+                std::destroy_at(new_data + shift); 
                 throw;
             }
-            
+
             try {
                 if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) {
                     std::uninitialized_move_n(begin() + shift, size_ - shift, new_data.GetAddress() + shift + 1);
@@ -291,39 +292,31 @@ public:
                     std::uninitialized_copy_n(begin() + shift, size_ - shift, new_data.GetAddress() + shift + 1);
                 }
             } catch (...) {
-                std::destroy_n(new_data.GetAddress(), shift + 1);
+                std::destroy_n(new_data.GetAddress(), shift);
                 throw;
             }
-            
+
             std::destroy_n(begin(), size_);
             data_.Swap(new_data);
-            
+            ++size_;
+
         } else {
             if (size_ == shift)
+            {
                 new (data_ + size_) T(std::move(*(end() - 1)));
+                ++size_;
+            }
             else {
                 T copy(std::forward<Args>(args)...);
                 new (data_ + size_) T(std::move(data_[size_ - 1]));
-                
-                size_t constructed_elements = 0;
-                try {
-                    std::move_backward(begin() + shift, end() - 1, end());
-                    constructed_elements = end() - (begin() + shift);
-                } catch (...) {
-                    std::destroy_at(data_ + shift);
-                    if (constructed_elements > 0) {
-                        std::destroy(begin() + shift, end() - 1);
-                    }
-                    throw;
-                }
-                //std::move_backward(begin() + shift, end() - 1, end());
+                ++size_;
+                std::move_backward(begin() + shift, end() - 2, end() - 1);
                 data_[shift] = std::move(copy);
             }
         }
 
-        ++size_;
         return begin() + shift;
-    } */
+    }*/
     
     template <typename... Args> 
     iterator Emplace(const_iterator pos, Args&&... args){ 
@@ -367,22 +360,9 @@ public:
 
                 try { 
                     std::move_backward(begin() + shift, end() - 1, end()); 
-                } catch (...) { 
-                    std::destroy_at(data_ + size_); 
-                    throw; 
-                } 
-                // Я пытался все случаи прописать в try-catch, чтобы на всех сложных моментах срабатывало
-                // Просто как я понимаю, мы делаем мув в выделенное заранее место
-                // По-возможности, прими, пожалуйста, хочу отправить 14 спринт на проверку...
-                try { 
                     data_[shift] = std::move(copy); 
                 } catch (...) { 
-                    try {
-                        std::move(begin() + shift + 1, end(), begin() + shift);
-                    } catch (...) {
-                        std::terminate();
-                    }
-                    std::destroy_at(data_ + size_);
+                    std::destroy_at(data_ + size_); 
                     throw; 
                 } 
             } 
@@ -391,7 +371,7 @@ public:
         ++size_; 
         return begin() + shift; 
     }
-
+    
 
     iterator Erase(const_iterator pos) /*noexcept(std::is_nothrow_move_assignable_v<T>)*/{
         assert(pos >= begin() && pos < end());
