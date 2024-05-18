@@ -337,7 +337,7 @@ public:
                 std::destroy_at(new_data + shift); 
                 throw; 
             } 
-
+            
             try { 
                 if constexpr (std::is_nothrow_move_constructible_v<T> || !std::is_copy_constructible_v<T>) { 
                     std::uninitialized_move_n(begin() + shift, size_ - shift, new_data.GetAddress() + shift + 1); 
@@ -357,7 +357,8 @@ public:
             } else { 
                 T copy(std::forward<Args>(args)...); 
                 new (data_ + size_) T(std::move(data_[size_ - 1])); 
-
+                
+                //Убрал лишнюю обработку и объеденил 2 try-catch в один
                 try { 
                     std::move_backward(begin() + shift, end() - 1, end()); 
                     data_[shift] = std::move(copy); 
